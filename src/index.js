@@ -32,9 +32,16 @@ const fetchExistingRecords = async (domain, correlationId) => {
     throw new Error(`Failed to fetch existing records. Status: ${response.status}`);
   }
   const data = await response.json();
+
+  const ns =
+    data?.GetDnsResponse?.GetDns?.NameServerSettings ??
+    data?.Response?.GetDns?.NameServerSettings ??
+    data?.GetDns?.NameServerSettings ??
+    {};
+
   return {
-    topDomain: Array.from(new Set(data.GetDnsResponse.GetDns.NameServerSettings.MainDomains.map(JSON.stringify))).map(JSON.parse),
-    subDomains: Array.from(new Set(data.GetDnsResponse.GetDns.NameServerSettings.SubDomains.map(JSON.stringify))).map(JSON.parse)
+    topDomain: Array.from(new Set((ns.MainDomains || []).map(JSON.stringify))).map(JSON.parse),
+    subDomains: Array.from(new Set((ns.SubDomains || []).map(JSON.stringify))).map(JSON.parse)
   };
 };
 
@@ -90,7 +97,13 @@ const server = http.createServer(async (req, res) => {
         logWithTimestamp(`{${correlationId}} Incoming request body: ${body}`);
       }
 
-      const existingRecords = await fetchExistingRecords(domain, correlationId);
+      let records = { topDomain: [], subDomains: [] };
+      try {
+        records = await fetchExistingRecords(domain, correlationId);
+      } catch (err) {
+        logWithTimestamp(`{${correlationId}} Error fetching existing records: ${err.message}`);
+      }
+  
       logWithTimestamp(`{${correlationId}} Existing records count (subdomains): ${existingRecords.subDomains.length}`);
       logWithTimestamp(`{${correlationId}} Existing records count (top-level): ${existingRecords.topDomain.length}`);
 
