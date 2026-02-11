@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-WEBHOOK_URL="http://<url-to-your-certbot>:<port>/present"
+WEBHOOK_URL="http://<url-to-webhook>:<port>/present"
 
 FQDN="_acme-challenge.${CERTBOT_DOMAIN}"
 VALUE="${CERTBOT_VALIDATION}"

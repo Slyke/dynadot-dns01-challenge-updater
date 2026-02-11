@@ -58,7 +58,6 @@ const makeRequest = async (url, correlationId) => {
 };
 
 const sanitizeDomain = (fqdn) => fqdn.replace(/[^a-zA-Z0-9.-_]/g, '');
-const stripSubdomain = (fqdn) => fqdn.split('.').slice(-2).join('.');
 const removeTrailingDot = (fqdn) => fqdn.endsWith('.') ? fqdn.slice(0, -1) : fqdn;
 
 const updateOrAddRecord = (records, subhost, type, value) => {
@@ -89,17 +88,37 @@ const server = http.createServer(async (req, res) => {
       console.log('');
       console.log('-------------------------------------------------------------------------');
       console.log('');
-      const { fqdn, domain, value } = JSON.parse(body);
-      const cleanFqdn = removeTrailingDot(fqdn);
-      const cleanDomain = sanitizeDomain(removeTrailingDot(domain));
+      const parsed = JSON.parse(body);
 
-      if (!cleanDomain) {
-        throw new Error("Domain missing");
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error("Invalid JSON payload");
+      }
+
+      let { fqdn, domain, value } = parsed;
+
+      if (!fqdn || !value) {
+        throw new Error("Missing required fields: fqdn, value");
+      }
+
+      const cleanFqdn = removeTrailingDot(String(fqdn));
+
+      let cleanDomain;
+
+      if (domain) {
+        cleanDomain = sanitizeDomain(removeTrailingDot(String(domain)));
+      } else {
+        // Fallback: assume last two labels are root domain
+        const parts = cleanFqdn.split('.');
+        if (parts.length < 2) {
+          throw new Error("Cannot derive domain from FQDN");
+        }
+        cleanDomain = parts.slice(-2).join('.');
       }
 
       if (!cleanFqdn.endsWith(cleanDomain)) {
-        throw new Error("FQDN does not match domain");
+        throw new Error("FQDN does not match derived domain");
       }
+
       let subdomain = '';
 
       if (cleanFqdn.length > cleanDomain.length) {
@@ -127,9 +146,9 @@ const server = http.createServer(async (req, res) => {
 
       if (req.url === '/cleanup') {
         existingRecords.subDomains = existingRecords.subDomains.filter((record) => !(record.Subhost === subdomain
-            && record.RecordType.toLowerCase() === 'txt'
-            && record.Value === value)
-          );
+          && record.RecordType.toLowerCase() === 'txt'
+          && record.Value === value)
+        );
       } else {
         updateOrAddRecord(existingRecords.subDomains, subdomain, 'txt', value);
       }
@@ -161,6 +180,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ message: `TXT record ${req.url === '/present' ? 'added/updated' : 'removed'}` }));
     } catch (error) {
       logWithTimestamp(`{${correlationId}} Error: ${error.message}`);
+      logWithTimestamp(`{${correlationId}} Params: ${JSON.stringify({ body })}`);
       res.writeHead(501, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Failed to process request' }));
     } finally {
