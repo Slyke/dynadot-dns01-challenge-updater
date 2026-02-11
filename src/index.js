@@ -89,19 +89,33 @@ const server = http.createServer(async (req, res) => {
       console.log('');
       console.log('-------------------------------------------------------------------------');
       console.log('');
-      const { fqdn, value } = JSON.parse(body);
-      const domain = sanitizeDomain(stripSubdomain(removeTrailingDot(fqdn)));
-      const subdomain = removeTrailingDot(fqdn?.replace(`.${domain}`, '') ?? '_acme-challenge');
+      const { fqdn, domain, value } = JSON.parse(body);
+      const cleanFqdn = removeTrailingDot(fqdn);
+      const cleanDomain = sanitizeDomain(removeTrailingDot(domain));
+
+      if (!cleanDomain) {
+        throw new Error("Domain missing");
+      }
+
+      if (!cleanFqdn.endsWith(cleanDomain)) {
+        throw new Error("FQDN does not match domain");
+      }
+      let subdomain = '';
+
+      if (cleanFqdn.length > cleanDomain.length) {
+        subdomain = cleanFqdn.slice(0, -(cleanDomain.length + 1));
+      }
 
       if (LOG_REQ_BODY) {
         logWithTimestamp(`{${correlationId}} Incoming request body: ${body}`);
       }
 
-      let records = { topDomain: [], subDomains: [] };
+      let existingRecords;
       try {
-        records = await fetchExistingRecords(domain, correlationId);
+        existingRecords = await fetchExistingRecords(cleanDomain, correlationId);
       } catch (err) {
         logWithTimestamp(`{${correlationId}} Error fetching existing records: ${err.message}`);
+        throw new Error("Aborting because existing DNS records could not be fetched");
       }
   
       logWithTimestamp(`{${correlationId}} Existing records count (subdomains): ${existingRecords.subDomains.length}`);
@@ -111,12 +125,19 @@ const server = http.createServer(async (req, res) => {
         logWithTimestamp(`{${correlationId}} Existing records: ${JSON.stringify(existingRecords)}`);
       }
 
-      updateOrAddRecord(existingRecords.subDomains, subdomain, 'txt', value);
+      if (req.url === '/cleanup') {
+        existingRecords.subDomains = existingRecords.subDomains.filter((record) => !(record.Subhost === subdomain
+            && record.RecordType.toLowerCase() === 'txt'
+            && record.Value === value)
+          );
+      } else {
+        updateOrAddRecord(existingRecords.subDomains, subdomain, 'txt', value);
+      }
 
       const apiUrl = new URL('https://api.dynadot.com/api3.json');
       apiUrl.searchParams.append('key', DYNADOT_API_KEY);
       apiUrl.searchParams.append('command', 'set_dns2');
-      apiUrl.searchParams.append('domain', domain);
+      apiUrl.searchParams.append('domain', cleanDomain);
 
       existingRecords.topDomain.forEach((record, index) => {
         apiUrl.searchParams.append(`main_record_type${index}`, record.RecordType.toLowerCase());

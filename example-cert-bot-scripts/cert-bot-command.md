@@ -1,0 +1,12 @@
+certbot certonly \
+  --manual \
+  --preferred-challenges dns \
+  --manual-auth-hook /hooks/auth.sh \
+  --manual-cleanup-hook /hooks/cleanup.sh \
+  --manual-public-ip-logging-ok \
+  --non-interactive \
+  --agree-tos \
+  --keep-until-expiring \
+  -m you@example.com \
+  -d yourdomain.com \
+  -d '*.yourdomain.com'

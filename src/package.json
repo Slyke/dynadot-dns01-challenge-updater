@@ -1,6 +1,6 @@
 {
-  "name": "technitium-dns-dns01-handler",
-  "version": "1.0.2",
+  "name": "dynadot-dns01-challenge-handler",
+  "version": "1.0.4",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
