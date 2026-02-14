@@ -19,6 +19,7 @@ try {
 
 const logWithTimestamp = (message) => {
   const timestamp = new Date().toISOString().replace('T', ' ');
+  const messageWithoutKey = message.replaceAll(DYNADOT_API_KEY, '****');
   console.log(`[${timestamp}]: ${message}`);
 };
 
