@@ -62,15 +62,30 @@ const sanitizeDomain = (fqdn) => fqdn.replace(/[^a-zA-Z0-9.-_]/g, '');
 const removeTrailingDot = (fqdn) => fqdn.endsWith('.') ? fqdn.slice(0, -1) : fqdn;
 
 const updateOrAddRecord = (records, subhost, type, value) => {
-  const existingIndex = records.findIndex(
-    record => record.Subhost === subhost && record.RecordType.toLowerCase() === type
-  );
+  type = type.toLowerCase();
+
+  if (type === 'txt') {
+    records.push({
+      Subhost: subhost,
+      RecordType: 'TXT',
+      Value: value
+    });
+    return;
+  }
+
+  const existingIndex = records.findIndex((record) => record.Subhost === subhost && record.RecordType.toLowerCase() === type);
+
   if (existingIndex !== -1) {
     records[existingIndex].Value = value;
   } else {
-    records.push({ Subhost: subhost, RecordType: type, Value: value });
+    records.push({
+      Subhost: subhost,
+      RecordType: type.toUpperCase(),
+      Value: value
+    });
   }
 };
+
 
 const server = http.createServer(async (req, res) => {
   const correlationId = crypto.randomUUID();

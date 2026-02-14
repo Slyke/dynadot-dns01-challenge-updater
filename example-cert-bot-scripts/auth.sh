@@ -6,7 +6,13 @@ WEBHOOK_URL="http://<url-to-webhook>:<port>/present"
 FQDN="_acme-challenge.${CERTBOT_DOMAIN}"
 VALUE="${CERTBOT_VALIDATION}"
 
-echo "Presenting DNS challenge for ${FQDN}"
+log "---------------------------------------------"
+log "Starting DNS-01 auth hook"
+log "FQDN  : ${FQDN}"
+log "DOMAIN: ${CERTBOT_DOMAIN}"
+log "VALUE : ${VALUE}"
+echo "URL   : ${WEBHOOK_URL}"
+log "---------------------------------------------"
 
 curl -s -X POST "$WEBHOOK_URL" \
   -H "Content-Type: application/json" \
@@ -16,15 +22,22 @@ curl -s -X POST "$WEBHOOK_URL" \
     \"value\": \"${VALUE}\"
   }"
 
-echo "Waiting for DNS propagation..."
+log "Waiting for DNS propagation..."
 
-for i in $(seq 1 30); do
-  if dig +short TXT "${FQDN}" | grep -q "${VALUE}"; then
-    echo "DNS propagated."
+for i in $(seq 1 $MAX_ATTEMPTS); do
+  CURRENT=$(dig +short TXT "${FQDN}" | tr -d '"')
+
+  log "Attempt $i/$MAX_ATTEMPTS"
+  log "Expected: ${VALUE}"
+  log "Found   : ${CURRENT:-<none>}"
+
+  echo "$CURRENT_VALUES" | grep -Fxq "$VALUE" && {
+    log "DNS propagated successfully."
     exit 0
-  fi
-  sleep 5
+  }
+
+  sleep $SLEEP_SECONDS
 done
 
-echo "DNS propagation failed."
+log "DNS propagation failed after $((MAX_ATTEMPTS * SLEEP_SECONDS)) seconds."
 exit 1
