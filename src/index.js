@@ -20,7 +20,7 @@ try {
 const logWithTimestamp = (message) => {
   const timestamp = new Date().toISOString().replace('T', ' ');
   const messageWithoutKey = message.replaceAll(DYNADOT_API_KEY, '****');
-  console.log(`[${timestamp}]: ${message}`);
+  console.log(`[${timestamp}]: ${messageWithoutKey}`);
 };
 
 const fetchExistingRecords = async (domain, correlationId) => {
@@ -55,7 +55,7 @@ const makeRequest = async (url, correlationId) => {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
 
-  return response.text
+  return response.text();
 };
 
 const sanitizeDomain = (fqdn) => fqdn.replace(/[^a-zA-Z0-9.-_]/g, '');
@@ -65,11 +65,16 @@ const updateOrAddRecord = (records, subhost, type, value) => {
   type = type.toLowerCase();
 
   if (type === 'txt') {
-    records.push({
-      Subhost: subhost,
-      RecordType: 'TXT',
-      Value: value
-    });
+    const exists = records.some((r) => r.Subhost === subhost && r.RecordType.toLowerCase() === 'txt' && r.Value === value);
+
+    if (!exists) {
+      records.push({
+        Subhost: subhost,
+        RecordType: 'TXT',
+        Value: value
+      });
+    }
+
     return;
   }
 
@@ -89,6 +94,10 @@ const updateOrAddRecord = (records, subhost, type, value) => {
 
 const server = http.createServer(async (req, res) => {
   const correlationId = crypto.randomUUID();
+  console.log('');
+  console.log('-------------------------------------------------------------------------');
+  console.log('');
+
   logWithTimestamp(`{${correlationId}} Received request: ${req.method} ${req.url}`);
 
   if (req.method !== 'POST' || !['/present', '/cleanup'].includes(req.url)) {
@@ -101,9 +110,6 @@ const server = http.createServer(async (req, res) => {
   req.on('data', chunk => { body += chunk; });
   req.on('end', async () => {
     try {
-      console.log('');
-      console.log('-------------------------------------------------------------------------');
-      console.log('');
       const parsed = JSON.parse(body);
 
       if (!parsed || typeof parsed !== 'object') {

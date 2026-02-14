@@ -31,7 +31,7 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
   log "Expected: ${VALUE}"
   log "Found   : ${CURRENT:-<none>}"
 
-  echo "$CURRENT_VALUES" | grep -Fxq "$VALUE" && {
+  echo "$CURRENT" | grep -Fxq "$VALUE" && {
     log "DNS propagated successfully."
     exit 0
   }
