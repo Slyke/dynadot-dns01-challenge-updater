@@ -23,6 +23,39 @@ const logWithTimestamp = (message) => {
   console.log(`[${timestamp}]: ${messageWithoutKey}`);
 };
 
+const deriveZone = async (fqdn, correlationId) => {
+  const parts = fqdn.split('.');
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const candidate = parts.slice(i).join('.');
+
+    try {
+      const url = `https://api.dynadot.com/api3.json?key=${DYNADOT_API_KEY}&command=get_dns&domain=${candidate}`;
+      if (LOG_DYNAREQ_URL) {
+        logWithTimestamp(`{${correlationId}} Testing zone candidate: ${candidate}`);
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) continue;
+
+      const data = await response.json();
+
+      const ns = data?.GetDnsResponse?.GetDns?.NameServerSettings
+        ?? data?.Response?.GetDns?.NameServerSettings
+        ?? data?.GetDns?.NameServerSettings;
+
+      if (ns && (ns.MainDomains || ns.SubDomains)) {
+        return candidate;
+      }
+
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("No valid Dynadot zone found for FQDN");
+};
+
 const fetchExistingRecords = async (domain, correlationId) => {
   const url = `https://api.dynadot.com/api3.json?key=${DYNADOT_API_KEY}&command=get_dns&domain=${domain}`;
   if (LOG_DYNAREQ_URL) {
@@ -34,11 +67,10 @@ const fetchExistingRecords = async (domain, correlationId) => {
   }
   const data = await response.json();
 
-  const ns =
-    data?.GetDnsResponse?.GetDns?.NameServerSettings ??
-    data?.Response?.GetDns?.NameServerSettings ??
-    data?.GetDns?.NameServerSettings ??
-    {};
+  const ns = data?.GetDnsResponse?.GetDns?.NameServerSettings
+    ?? data?.Response?.GetDns?.NameServerSettings
+    ?? data?.GetDns?.NameServerSettings
+    ?? {};
 
   return {
     topDomain: Array.from(new Set((ns.MainDomains || []).map(JSON.stringify))).map(JSON.parse),
@@ -118,24 +150,20 @@ const server = http.createServer(async (req, res) => {
 
       let { fqdn, domain, value } = parsed;
 
+      logWithTimestamp(`{${correlationId}} Certbot requested domain: ${domain}`);
+
       if (!fqdn || !value) {
         throw new Error("Missing required fields: fqdn, value");
       }
 
+      if (LOG_REQ_BODY) {
+        logWithTimestamp(`{${correlationId}} Incoming request body: ${body}`);
+      }
+
       const cleanFqdn = removeTrailingDot(String(fqdn));
 
-      let cleanDomain;
-
-      if (domain) {
-        cleanDomain = sanitizeDomain(removeTrailingDot(String(domain)));
-      } else {
-        // Fallback: assume last two labels are root domain
-        const parts = cleanFqdn.split('.');
-        if (parts.length < 2) {
-          throw new Error("Cannot derive domain from FQDN");
-        }
-        cleanDomain = parts.slice(-2).join('.');
-      }
+      const cleanDomain = await deriveZone(cleanFqdn, correlationId);
+      logWithTimestamp(`{${correlationId}} Derived zone: ${cleanDomain}`);
 
       if (!cleanFqdn.endsWith(cleanDomain)) {
         throw new Error("FQDN does not match derived domain");
@@ -143,13 +171,10 @@ const server = http.createServer(async (req, res) => {
 
       let subdomain = '';
 
-      if (cleanFqdn.length > cleanDomain.length) {
+      if (cleanFqdn !== cleanDomain) {
         subdomain = cleanFqdn.slice(0, -(cleanDomain.length + 1));
       }
-
-      if (LOG_REQ_BODY) {
-        logWithTimestamp(`{${correlationId}} Incoming request body: ${body}`);
-      }
+      logWithTimestamp(`{${correlationId}} Derived subdomain: ${subdomain}`);
 
       let existingRecords;
       try {
